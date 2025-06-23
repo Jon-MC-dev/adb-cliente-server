@@ -5,7 +5,7 @@ import sys
 import os
 
 
-SERVER_URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5001"
+SERVER_URL = sys.argv[1] if len(sys.argv) > 1 else "https://lsk6q09x-5001.usw3.devtunnels.ms"
 
 sio = socketio.Client()
 
