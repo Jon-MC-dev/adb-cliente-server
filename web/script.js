@@ -7,6 +7,7 @@ socket.on('connect', () => {
 });
 
 socket.on('output', data => {
+  console.log('Received output:', data);
   const line = document.createElement('div');
   line.textContent = data.output;
   consoleDiv.appendChild(line);
@@ -14,8 +15,11 @@ socket.on('output', data => {
 });
 
 input.addEventListener('keydown', event => {
+  console.log(event.key);
+  
   if (event.key === 'Enter') {
     const cmd = input.value;
+    console.log('Sending command:', cmd);
     socket.emit('command_from_web', { command: cmd });
     input.value = '';
   }

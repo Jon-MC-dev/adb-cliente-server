@@ -14,12 +14,14 @@ def handle_connect():
 
 @socketio.on('output_from_client')
 def handle_output(data):
+    print('Received output from client:', data)
     # Forward ADB output to web clients
     socketio.emit('output', data)
 
 @socketio.on('command_from_web')
 def handle_command(data):
     # Forward command to ADB client
+    print('Received command from web client:', data)
     socketio.emit('execute_command', data)
 
 @app.route('/')
