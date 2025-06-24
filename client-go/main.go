@@ -380,16 +380,29 @@ func (c *Client) executeLocalCommand(cmd string) string {
 }
 
 func (c *Client) executeADBCommand(cmd string) {
+	// Check if ADB process is running
 	if c.adbProcess == nil || c.adbProcess.ProcessState != nil {
+		fmt.Println("Starting new ADB shell process...")
 		if !c.startADBShell() {
 			c.sendOutput("Failed to start ADB shell\n" + c.getPrompt())
 			return
 		}
+		// Give ADB shell time to initialize
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	// Send command to ADB shell
 	if c.adbStdin != nil {
-		c.adbStdin.Write([]byte(cmd + "\n"))
+		fmt.Printf("Sending ADB command: %s\n", cmd)
+		_, err := c.adbStdin.Write([]byte(cmd + "\n"))
+		if err != nil {
+			fmt.Printf("Error writing to ADB stdin: %v\n", err)
+			c.sendOutput("Error sending command to ADB shell\n" + c.getPrompt())
+			return
+		}
+	} else {
+		fmt.Println("ADB stdin is nil")
+		c.sendOutput("ADB shell not ready\n" + c.getPrompt())
 	}
 }
 
@@ -440,7 +453,9 @@ func (c *Client) readADBOutput() {
 		line = strings.TrimSuffix(line, "\r")
 
 		if line != "" {
-			c.sendOutput(line)
+			fmt.Printf("ADB output: %s\n", line) // Debug log
+			// Send output with prompt after each line
+			c.sendOutput(line + "\n" + c.getPrompt())
 		}
 	}
 }

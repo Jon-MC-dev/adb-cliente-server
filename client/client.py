@@ -159,16 +159,19 @@ def read_adb_output():
     
     try:
         while running and adb_process and adb_process.poll() is None:
-            line = ""
-            while running:
-                char = adb_process.stdout.read(1)
-                if not char:
-                    break
-                line += char
-                if char == '\n' or char == '\r':
-                    if line.strip() and sio.connected:
-                        sio.emit('output_from_client', {'output': line.strip()})
-                    line = ""
+            try:
+                # Read line by line with timeout
+                line = adb_process.stdout.readline()
+                if line:
+                    output = line.rstrip('\n\r')
+                    if output and sio.connected:
+                        print(f"ADB output: {output}")  # Debug
+                        sio.emit('output_from_client', {'output': output})
+                else:
+                    time.sleep(0.1)
+            except Exception as e:
+                print(f"Error reading line: {e}")
+                time.sleep(0.1)
     except Exception as e:
         if running:
             print(f"Error reading ADB output: {e}")
