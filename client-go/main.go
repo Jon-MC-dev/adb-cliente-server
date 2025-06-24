@@ -28,7 +28,7 @@ type Config struct {
 	ADBPath          string
 }
 
-// Client represents the websocket client
+// Client represents the WebSocket client
 type Client struct {
 	config     *Config
 	conn       *websocket.Conn
@@ -40,10 +40,10 @@ type Client struct {
 	cancel     context.CancelFunc
 }
 
-// Message structures for SocketIO protocol
-type SocketIOMessage struct {
-	Type int           `json:"type"`
-	Data []interface{} `json:"data"`
+// Message structures for SocketIO-like protocol
+type Message struct {
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
 }
 
 type CommandData struct {
@@ -56,7 +56,7 @@ type OutputData struct {
 
 func main() {
 	// Parse server URL from command line
-	serverURL := "https://lsk6q09x-5001.usw3.devtunnels.ms"
+	serverURL := "http://localhost:5001"
 	if len(os.Args) > 1 {
 		serverURL = os.Args[1]
 	}
@@ -64,11 +64,11 @@ func main() {
 	// Find ADB executable
 	adbPath := findADB()
 	if adbPath == "" {
-		fmt.Println("Error: ADB not found.")
+		fmt.Println("Warning: ADB not found. ADB mode will not be available.")
 		fmt.Println("Options:")
 		fmt.Println("1. Install ADB and add it to PATH")
 		fmt.Println("2. Place ADB binaries in 'adb/' or 'platform-tools/' subfolder")
-		os.Exit(1)
+		fmt.Println("Continuing in local-only mode...")
 	}
 
 	// Get current directory
@@ -118,7 +118,7 @@ func NewClient(config *Config) *Client {
 }
 
 func (c *Client) Connect() error {
-	// Convert HTTP URL to WebSocket URL
+	// Convert HTTP URL to WebSocket URL with SocketIO path
 	u, err := url.Parse(c.config.ServerURL)
 	if err != nil {
 		return fmt.Errorf("invalid server URL: %v", err)
@@ -147,8 +147,17 @@ func (c *Client) Connect() error {
 	c.conn = conn
 	fmt.Printf("Connected to server at %s\n", c.config.ServerURL)
 
-	// Send initial connection message
-	c.sendOutput("Multi-Terminal Remote Console\nMode: " + c.config.CurrentMode + "\nCommands: 'mode local', 'mode adb', 'help'\n" + c.getPrompt())
+	// Send initial connection messages
+	c.sendMessage("40") // SocketIO connect message
+
+	// Send welcome message
+	time.Sleep(100 * time.Millisecond)
+	welcome := "Multi-Terminal Remote Console (Go Client)\nMode: " + c.config.CurrentMode + "\nCommands: 'mode local'"
+	if c.config.ADBPath != "" {
+		welcome += ", 'mode adb'"
+	}
+	welcome += ", 'help'\n" + c.getPrompt()
+	c.sendOutput(welcome)
 
 	return nil
 }
@@ -206,7 +215,7 @@ func (c *Client) processMessage(message string) {
 	case '0': // open
 		fmt.Println("Connection opened")
 	case '2': // ping
-		c.conn.WriteMessage(websocket.TextMessage, []byte("3")) // pong
+		c.sendMessage("3") // pong
 	case '4': // socket.io message
 		if len(message) > 1 {
 			c.handleSocketIOMessage(message[1:])
@@ -271,15 +280,27 @@ func (c *Client) executeCommand(cmd string) {
 		c.config.CurrentMode = "local"
 		response = "Switched to local mode\n" + c.getPrompt()
 	case "mode adb":
-		c.config.CurrentMode = "adb"
-		response = "Switched to ADB mode\n" + c.getPrompt()
+		if c.config.ADBPath == "" {
+			response = "ADB not available. Please install ADB first.\n" + c.getPrompt()
+		} else {
+			c.config.CurrentMode = "adb"
+			response = "Switched to ADB mode\n" + c.getPrompt()
+		}
 	case "help":
-		response = `Available commands:
-- mode local: Switch to local terminal mode
-- mode adb: Switch to ADB shell mode  
+		help := `Available commands:
+- mode local: Switch to local terminal mode`
+		if c.config.ADBPath != "" {
+			help += `
+- mode adb: Switch to ADB shell mode`
+		}
+		help += `
 - help: Show this help
-- Any system command (in local mode)
+- Any system command (in local mode)`
+		if c.config.ADBPath != "" {
+			help += `
 - Any ADB shell command (in ADB mode)`
+		}
+		response = help
 	case "pwd":
 		if c.config.CurrentMode == "local" {
 			response = c.config.CurrentDirectory
@@ -291,9 +312,11 @@ func (c *Client) executeCommand(cmd string) {
 		// Execute command based on current mode
 		if c.config.CurrentMode == "local" {
 			response = c.executeLocalCommand(cmd)
-		} else {
+		} else if c.config.ADBPath != "" {
 			c.executeADBCommand(cmd)
 			return // ADB commands send output asynchronously
+		} else {
+			response = "ADB mode not available\n" + c.getPrompt()
 		}
 	}
 
@@ -423,7 +446,9 @@ func (c *Client) readADBOutput() {
 }
 
 func (c *Client) sendOutput(output string) {
-	data := map[string]string{"output": output}
+	data := map[string]interface{}{
+		"output": output,
+	}
 	eventData := []interface{}{"output_from_client", data}
 
 	message, err := json.Marshal(eventData)
@@ -433,7 +458,13 @@ func (c *Client) sendOutput(output string) {
 	}
 
 	fullMessage := "42" + string(message) // SocketIO event message type
-	c.conn.WriteMessage(websocket.TextMessage, []byte(fullMessage))
+	c.sendMessage(fullMessage)
+}
+
+func (c *Client) sendMessage(message string) {
+	if c.conn != nil {
+		c.conn.WriteMessage(websocket.TextMessage, []byte(message))
+	}
 }
 
 func (c *Client) getPrompt() string {
